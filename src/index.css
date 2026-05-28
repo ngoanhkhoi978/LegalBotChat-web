@@ -32,7 +32,7 @@
   --ds-info-soft: rgba(42, 110, 187, 0.12);
   --ds-success-soft: rgba(40, 120, 103, 0.12);
   --ds-error-soft: rgba(179, 38, 30, 0.12);
-  --ds-accent-soft: rgba(255, 194, 81, 0.2);
+  --ds-accent-soft: rgba(255, 194, 81, 0.5);
 
   --ds-font-base: "Nunito", Arial, sans-serif;
   --ds-font-heading: "Nunito", Arial, sans-serif;

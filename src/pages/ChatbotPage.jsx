@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Badge } from '../components/ui/Badge';
 import { useAutosizeTextarea } from '../hooks/useAutosizeTextarea';
+import { useTheme } from '../hooks/useTheme.js';
 
 /* ─── Static data ─── */
 
@@ -113,6 +114,7 @@ export default function ChatbotPage() {
     const [sidebarSearch, setSidebarSearch] = useState('');
     const listRef = useRef(null);
     const textareaRef = useRef(null);
+    const { theme } = useTheme();
 
     useAutosizeTextarea(textareaRef, input);
 
@@ -269,7 +271,11 @@ export default function ChatbotPage() {
                 {/* Message list — only this scrolls */}
                 <div
                     ref={listRef}
-                    className="bg-surface flex-1 overflow-y-auto"
+                    className={`flex-1 overflow-y-auto ${
+                        theme === 'dark'
+                            ? 'bg-surface'
+                            : "bg-[url('/src/assets/bg.jpg')] bg-cover bg-center bg-no-repeat"
+                    }`}
                     style={{ overscrollBehavior: 'contain' }}
                 >
                     {isEmpty ? (
@@ -324,9 +330,16 @@ export default function ChatbotPage() {
                                 type="button"
                                 onClick={handleSend}
                                 disabled={!input.trim() || isTyping}
-                                className="bg-accent text-on-surface shrink-0 rounded-[3px] px-3.5 py-1.5 text-[12px] font-semibold transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-35"
+                                className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-black text-white transition-all duration-200 hover:scale-[1.03] hover:bg-neutral-800 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-black dark:hover:bg-neutral-200"
                             >
-                                Gửi
+                                <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    viewBox="0 0 24 24"
+                                    fill="currentColor"
+                                    className="h-4 w-4"
+                                >
+                                    <path d="M3.4 20.4L20.85 12.93c.8-.34.8-1.52 0-1.86L3.4 3.6c-.66-.28-1.33.32-1.14 1l1.67 5.87c.08.3.34.5.65.53l8.43.67-8.43.67a.75.75 0 0 0-.65.53L2.26 19.4c-.19.68.48 1.28 1.14 1Z" />
+                                </svg>
                             </button>
                         </div>
                         <p className="text-muted mt-1 text-[10px]">

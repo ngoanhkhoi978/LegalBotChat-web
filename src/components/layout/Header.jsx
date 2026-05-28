@@ -63,7 +63,7 @@ export function Header() {
                     <button
                         type="button"
                         className="flex h-8 w-8 items-center justify-center rounded-[4px] text-[15px] text-muted transition hover:bg-surface-variant focus-visible:outline-none focus-visible:[box-shadow:0_0_0_2px_var(--ds-info)]"
-                        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                        onClick={() => { console.debug('[Header] toggle theme (before):', theme); setTheme(theme === 'dark' ? 'light' : 'dark'); console.debug('[Header] toggle theme (after):', window.localStorage.getItem('legalchatbot-theme')); }}
                         aria-label={theme === 'dark' ? 'Chuyển sang chế độ sáng' : 'Chuyển sang chế độ tối'}
                         title={theme === 'dark' ? 'Chế độ sáng' : 'Chế độ tối'}
                     >
