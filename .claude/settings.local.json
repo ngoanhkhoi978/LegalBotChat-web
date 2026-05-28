@@ -16,7 +16,8 @@
       "Read(//d/workspace/project/VKU/CD2/legalchatbot/**)",
       "Bash(node screenshot.cjs)",
       "Bash(rm \"/d/workspace/project/VKU/CD2/legalchatbot/screenshot.cjs\" && echo \"cleaned\")",
-      "Bash(npm uninstall *)"
+      "Bash(npm uninstall *)",
+      "Bash(node ss.cjs)"
     ],
     "additionalDirectories": [
       "D:\\workspace\\project\\VKU\\CD2\\legalchatbot"

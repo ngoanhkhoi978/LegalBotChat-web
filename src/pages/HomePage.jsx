@@ -4,54 +4,14 @@ import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 
 const quickAccessItems = [
-    {
-        icon: '₫',
-        title: 'Mức phạt giao thông',
-        description: 'Tra cứu nhanh mức xử phạt theo hành vi',
-        color: 'var(--ds-primary)',
-    },
-    {
-        icon: '🍺',
-        title: 'Nồng độ cồn',
-        description: 'Mức phạt và biện pháp xử lý theo nồng độ',
-        color: 'var(--ds-secondary)',
-    },
-    {
-        icon: '📋',
-        title: 'Giấy tờ xe',
-        description: 'Bằng lái, đăng ký, bảo hiểm bắt buộc',
-        color: 'var(--ds-info)',
-    },
-    {
-        icon: '🛵',
-        title: 'Luật xe máy',
-        description: 'Quy tắc và các mức xử phạt xe máy',
-        color: 'var(--ds-secondary)',
-    },
-    {
-        icon: '🚗',
-        title: 'Luật ô tô',
-        description: 'Quy tắc và các mức xử phạt ô tô',
-        color: 'var(--ds-info)',
-    },
-    {
-        icon: '🚦',
-        title: 'Biển báo giao thông',
-        description: 'Nhận diện ý nghĩa và quy định biển báo',
-        color: 'var(--ds-accent-warm)',
-    },
-    {
-        icon: '⚠️',
-        title: 'Tai nạn giao thông',
-        description: 'Xử lý hiện trường và trách nhiệm pháp lý',
-        color: 'var(--ds-error)',
-    },
-    {
-        icon: '🪪',
-        title: 'Quy định GPLX',
-        description: 'Hạng bằng, thời hạn, thủ tục cấp đổi',
-        color: 'var(--ds-success)',
-    },
+    { title: 'Mức phạt giao thông', description: 'Tra cứu nhanh mức xử phạt theo hành vi vi phạm' },
+    { title: 'Nồng độ cồn', description: 'Mức phạt và biện pháp xử lý theo từng nồng độ' },
+    { title: 'Giấy tờ xe', description: 'Bằng lái, đăng ký, bảo hiểm xe bắt buộc' },
+    { title: 'Luật xe máy', description: 'Quy tắc và các mức xử phạt dành cho xe máy' },
+    { title: 'Luật ô tô', description: 'Quy tắc và các mức xử phạt dành cho ô tô' },
+    { title: 'Biển báo giao thông', description: 'Nhận diện ý nghĩa và quy định biển báo đường bộ' },
+    { title: 'Tai nạn giao thông', description: 'Xử lý hiện trường và trách nhiệm pháp lý liên quan' },
+    { title: 'Quy định GPLX', description: 'Hạng bằng, thời hạn, thủ tục cấp đổi giấy phép' },
 ];
 
 const legalUpdates = [
@@ -200,7 +160,7 @@ export default function HomePage() {
                                 variants={fadeUp}
                                 transition={{ duration: 0.22, delay: i * 0.04 }}
                             >
-                                <QuickAccessCard item={item} />
+                                <QuickAccessCard item={item} index={i} />
                             </motion.div>
                         ))}
                     </div>
@@ -277,27 +237,23 @@ function SectionHeader({ label, title, description }) {
     );
 }
 
-function QuickAccessCard({ item }) {
+function QuickAccessCard({ item, index }) {
     return (
         <button
             type="button"
-            className="card-base hover-card w-full p-5 text-left transition flex flex-col gap-3 group"
+            className="card-base hover-card w-full p-4 text-left transition flex flex-col gap-2.5 group"
         >
-            <span
-                className="flex h-9 w-9 items-center justify-center rounded-[6px] text-[18px]"
-                style={{ background: `color-mix(in srgb, ${item.color} 12%, transparent)` }}
-                aria-hidden="true"
-            >
-                {item.icon}
-            </span>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted">
+                {String(index + 1).padStart(2, '0')}
+            </p>
             <div className="flex-1 space-y-1">
-                <p className="text-title-md text-on-surface group-hover:text-secondary transition-colors">
+                <p className="text-[15px] font-semibold text-on-surface group-hover:text-secondary transition-colors leading-snug">
                     {item.title}
                 </p>
-                <p className="text-body-sm text-muted leading-snug">{item.description}</p>
+                <p className="text-[13px] text-muted leading-snug">{item.description}</p>
             </div>
-            <span className="text-body-sm text-info flex items-center gap-1">
-                Tra cứu <span aria-hidden>→</span>
+            <span className="text-[12px] text-info font-medium">
+                Tra cứu →
             </span>
         </button>
     );

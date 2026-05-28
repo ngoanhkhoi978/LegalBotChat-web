@@ -1,6 +1,16 @@
 @import url("https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes typing-dot {
+  0%, 60%, 100% { opacity: 0.25; transform: scale(0.75); }
+  30% { opacity: 1; transform: scale(1); }
+}
+
 :root {
   --ds-primary: #903938;
   --ds-primary-variant: #7a2e2d;
@@ -246,6 +256,44 @@
     font-weight: 400;
   }
 
+  /* ── Skeleton shimmer ── */
+  .skeleton {
+    border-radius: 3px;
+    background: linear-gradient(
+      90deg,
+      var(--ds-surface-variant) 0%,
+      var(--ds-surface) 40%,
+      var(--ds-surface-variant) 80%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.6s ease-in-out infinite;
+  }
+
+  .dark .skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--ds-surface-variant) 0%,
+      rgba(255, 255, 255, 0.06) 40%,
+      var(--ds-surface-variant) 80%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.6s ease-in-out infinite;
+  }
+
+  /* ── Typing dots ── */
+  .typing-dot {
+    animation: typing-dot 1.4s ease-in-out infinite;
+  }
+
+  .typing-dot:nth-child(1) { animation-delay: 0s; }
+  .typing-dot:nth-child(2) { animation-delay: 0.18s; }
+  .typing-dot:nth-child(3) { animation-delay: 0.36s; }
+
+  /* ── Colour utilities ── */
+  .bg-primary-variant {
+    background-color: var(--ds-primary-variant);
+  }
+
   .bg-secondary {
     background-color: var(--ds-secondary);
   }
@@ -406,6 +454,52 @@
     color: var(--ds-on-surface);
   }
 
+  /* ── Badge system ── */
+  .badge-base {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 3px;
+    border-width: 1px;
+    border-style: solid;
+    padding: 2px 6px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 16px;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+  }
+
+  .badge-neutral {
+    border-color: var(--ds-border);
+    background-color: var(--ds-surface-variant);
+    color: var(--ds-on-surface-muted);
+  }
+
+  .badge-info {
+    border-color: rgba(42, 110, 187, 0.3);
+    background-color: rgba(42, 110, 187, 0.07);
+    color: var(--ds-info);
+  }
+
+  .badge-success {
+    border-color: rgba(40, 120, 103, 0.3);
+    background-color: rgba(40, 120, 103, 0.07);
+    color: var(--ds-success);
+  }
+
+  .badge-warning {
+    border-color: rgba(202, 89, 0, 0.3);
+    background-color: rgba(202, 89, 0, 0.07);
+    color: var(--ds-accent-warm);
+  }
+
+  .badge-error {
+    border-color: rgba(179, 38, 30, 0.3);
+    background-color: rgba(179, 38, 30, 0.07);
+    color: var(--ds-error);
+  }
+
+  /* ── Card ── */
   .card-base {
     border: 1px solid var(--ds-border);
     border-radius: 8px;

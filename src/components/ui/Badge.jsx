@@ -1,21 +1,17 @@
 import { cn } from '../../lib/utils';
 
 const variants = {
-    neutral: 'bg-surface text-on-surface border border-default',
-    info: 'bg-surface text-info border border-default',
-    success: 'bg-surface text-success border border-default',
-    warning: 'bg-surface text-accent-warm border border-default',
-    error: 'bg-surface text-error border border-default',
+    neutral: 'badge-neutral',
+    info: 'badge-info',
+    success: 'badge-success',
+    warning: 'badge-warning',
+    error: 'badge-error',
 };
 
 export function Badge({ className, variant = 'neutral', ...props }) {
     return (
         <span
-            className={cn(
-                'inline-flex items-center rounded-[3px] px-2 py-1 text-caption font-medium',
-                variants[variant],
-                className,
-            )}
+            className={cn('badge-base', variants[variant], className)}
             {...props}
         />
     );

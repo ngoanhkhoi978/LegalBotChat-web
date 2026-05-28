@@ -23,7 +23,7 @@ export function Header() {
 
     return (
         <header className="header-glass border-b border-default">
-            <div className="container-page flex h-16 items-center justify-between gap-4">
+            <div className="flex h-16 items-center justify-between gap-4 px-5 md:px-6">
                 {/* Brand */}
                 <NavLink to="/" className="flex shrink-0 items-center gap-2.5 hover:opacity-90 transition-opacity">
                     <img
@@ -89,7 +89,7 @@ export function Header() {
             {menuOpen && (
                 <div
                     id="mobile-nav"
-                    className="container-page border-t border-default pb-3 md:hidden"
+                    className="border-t border-default px-5 pb-3 md:hidden"
                 >
                     <nav className="flex flex-col gap-0.5 pt-2" aria-label="Điều hướng di động">
                         {navItems.map((item) => {
