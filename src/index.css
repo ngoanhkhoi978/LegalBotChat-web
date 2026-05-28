@@ -11,6 +11,11 @@
   30% { opacity: 1; transform: scale(1); }
 }
 
+@keyframes blink-cursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
 :root {
   --ds-primary: #903938;
   --ds-primary-variant: #7a2e2d;
@@ -288,6 +293,18 @@
   .typing-dot:nth-child(1) { animation-delay: 0s; }
   .typing-dot:nth-child(2) { animation-delay: 0.18s; }
   .typing-dot:nth-child(3) { animation-delay: 0.36s; }
+
+  /* ── Streaming cursor — blinking caret at end of AI response ── */
+  .stream-cursor {
+    display: inline-block;
+    width: 2px;
+    height: 1em;
+    background-color: var(--ds-on-surface-muted);
+    margin-left: 2px;
+    vertical-align: text-bottom;
+    border-radius: 1px;
+    animation: blink-cursor 0.75s step-end infinite;
+  }
 
   /* ── Colour utilities ── */
   .bg-primary-variant {
