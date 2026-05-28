@@ -2,7 +2,6 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Badge } from '../components/ui/Badge';
 import { useAutosizeTextarea } from '../hooks/useAutosizeTextarea';
 import { useChatHistory, formatTime } from '../hooks/useChatHistory';
 import { streamChat, checkApiStatus } from '../api/chat';
@@ -29,7 +28,6 @@ export default function ChatbotPage() {
     const {
         conversations,
         activeId,
-        activeConversation,
         messages,
         createConversation,
         switchConversation,
@@ -50,6 +48,10 @@ export default function ChatbotPage() {
     const listRef = useRef(null);
     const textareaRef = useRef(null);
     const abortRef = useRef(null);
+    const flushTimerRef = useRef(null);
+    const streamStateRef = useRef(null);
+    const autoScrollRef = useRef(true);
+    const scrollRafRef = useRef(null);
 
     useAutosizeTextarea(textareaRef, input);
 
@@ -58,15 +60,75 @@ export default function ChatbotPage() {
         checkApiStatus().then(setApiStatus);
     }, []);
 
-    /* Auto-scroll to bottom when messages update or streaming */
+    const scrollToBottom = useCallback(
+        (force = false) => {
+            const el = listRef.current;
+            if (!el) return;
+            if (!force && !autoScrollRef.current) return;
+
+            if (scrollRafRef.current) {
+                cancelAnimationFrame(scrollRafRef.current);
+            }
+
+            scrollRafRef.current = window.requestAnimationFrame(() => {
+                el.scrollTop = el.scrollHeight;
+            });
+        },
+        []
+    );
+
+    const flushStreamBuffer = useCallback(() => {
+        const state = streamStateRef.current;
+        if (!state) return '';
+
+        if (state.buffer) {
+            state.accumulated += state.buffer;
+            state.buffer = '';
+        }
+
+        updateMessage(state.convId, state.msgId, {
+            content: state.accumulated,
+        });
+
+        return state.accumulated;
+    }, [updateMessage]);
+
+    const scheduleStreamFlush = useCallback(() => {
+        if (flushTimerRef.current || !streamStateRef.current) return;
+
+        flushTimerRef.current = window.setTimeout(() => {
+            flushTimerRef.current = null;
+            flushStreamBuffer();
+            if (streamStateRef.current?.buffer) {
+                scheduleStreamFlush();
+            } else {
+                scrollToBottom();
+            }
+        }, 70);
+    }, [flushStreamBuffer, scrollToBottom]);
+
     useEffect(() => {
         const el = listRef.current;
         if (!el) return;
-        const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 200;
-        if (isNearBottom || isStreaming) {
-            el.scrollTop = el.scrollHeight;
+
+        const isNearBottom =
+            el.scrollHeight - el.scrollTop - el.clientHeight < 160;
+
+        if (isNearBottom) {
+            autoScrollRef.current = true;
         }
-    }, [messages, isStreaming]);
+
+        if (isNearBottom || (isStreaming && autoScrollRef.current)) {
+            scrollToBottom();
+        }
+
+        return () => {
+            if (scrollRafRef.current) {
+                cancelAnimationFrame(scrollRafRef.current);
+                scrollRafRef.current = null;
+            }
+        };
+    }, [messages, isStreaming, scrollToBottom]);
 
     /* ── Send handler ── */
     const handleSend = useCallback(async () => {
@@ -98,34 +160,66 @@ export default function ChatbotPage() {
             timestamp: Date.now(),
         });
         setStreamingMsgId(asstId);
+        autoScrollRef.current = true;
+        streamStateRef.current = {
+            convId,
+            msgId: asstId,
+            buffer: '',
+            accumulated: '',
+        };
+        scrollToBottom(true);
 
         /* Abort controller so navigation cancels the stream */
         const ctrl = new AbortController();
         abortRef.current = ctrl;
 
         try {
-            let accumulated = '';
             for await (const chunk of streamChat(text, ctrl.signal)) {
-                accumulated += chunk;
-                updateMessage(convId, asstId, { content: accumulated });
+                const state = streamStateRef.current;
+                if (!state) break;
+
+                state.buffer += chunk;
+                scheduleStreamFlush();
             }
+
+            flushStreamBuffer();
         } catch (err) {
             if (err.name === 'AbortError') {
                 /* User navigated away or sent a new message — keep partial content */
                 return;
             }
+            const partial = flushStreamBuffer();
             updateMessage(convId, asstId, {
-                content: err.message,
+                content: partial || err.message,
                 error: true,
+                errorMessage: err.message,
             });
             /* If API was thought online but failed, recheck */
             if (apiStatus === 'online') setApiStatus('offline');
         } finally {
+            if (flushTimerRef.current) {
+                clearTimeout(flushTimerRef.current);
+                flushTimerRef.current = null;
+            }
+            streamStateRef.current = null;
             setIsStreaming(false);
             setStreamingMsgId(null);
             abortRef.current = null;
+            scrollToBottom();
         }
-    }, [input, isStreaming, activeId, createConversation, addMessage, updateMessage, uid, apiStatus]);
+    }, [
+        input,
+        isStreaming,
+        activeId,
+        createConversation,
+        addMessage,
+        updateMessage,
+        uid,
+        apiStatus,
+        flushStreamBuffer,
+        scheduleStreamFlush,
+        scrollToBottom,
+    ]);
 
     const handleKeyDown = (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -154,6 +248,13 @@ export default function ChatbotPage() {
         switchConversation(id);
     };
 
+    const handleListScroll = () => {
+        const el = listRef.current;
+        if (!el) return;
+        autoScrollRef.current =
+            el.scrollHeight - el.scrollTop - el.clientHeight < 160;
+    };
+
     /* ── Filtered sidebar list ── */
     const filteredConversations = sidebarSearch.trim()
         ? conversations.filter((c) =>
@@ -162,9 +263,6 @@ export default function ChatbotPage() {
         : conversations;
 
     const isEmpty = messages.length === 0;
-    const currentMessage = messages[messages.length - 1];
-    const isLastMsgStreaming =
-        isStreaming && currentMessage?.id === streamingMsgId;
 
     return (
         <div className="flex h-full overflow-hidden bg-surface">
@@ -211,11 +309,14 @@ export default function ChatbotPage() {
                                     conv={conv}
                                     isActive={conv.id === activeId}
                                     onSelect={() => handleSwitchConversation(conv.id)}
-                                    onDelete={() =>
-                                        confirmClearId === conv.id
-                                            ? (deleteConversation(conv.id), setConfirmClearId(null))
-                                            : setConfirmClearId(conv.id)
-                                    }
+                                    onDelete={() => {
+                                        if (confirmClearId === conv.id) {
+                                            deleteConversation(conv.id);
+                                            setConfirmClearId(null);
+                                            return;
+                                        }
+                                        setConfirmClearId(conv.id);
+                                    }}
                                     confirmDelete={confirmClearId === conv.id}
                                 />
                             ))}
@@ -265,6 +366,7 @@ export default function ChatbotPage() {
                 <div
                     ref={listRef}
                     className="flex-1 overflow-y-auto bg-surface"
+                    onScroll={handleListScroll}
                     style={{ overscrollBehavior: 'contain' }}
                 >
                     {isEmpty ? (
@@ -451,6 +553,170 @@ function WelcomeState({ onSuggest, apiStatus }) {
     );
 }
 
+/* ─── Markdown normalization ───
+ * The LLM sometimes outputs "text.### Heading" without a blank line before
+ * the heading marker. Standard CommonMark requires headings to be on their
+ * own line, so we inject the missing newlines before rendering.
+ */
+/**
+ * normalizeMarkdown — fix LLM formatting inconsistencies before ReactMarkdown.
+ *
+ * Standardized convention (must match backend system prompt):
+ *   - Bullet lists: "- " (hyphen+space), NOT "*"
+ *   - Headings: "## Title" with blank line before AND after
+ *   - Bold: "**term**"
+ *   - Closing: "---" then "**Kết luận:**"
+ *
+ * This function is a safety net for when the LLM deviates from the convention.
+ */
+function normalizeMarkdown(raw) {
+    if (!raw) return raw;
+
+    // 1. Normalize line endings
+    let text = raw.replace(/\r\n?/g, '\n');
+
+    // 2. Ensure ATX headings (##/###) are preceded by a blank line
+    text = text.replace(/([^\n])(#{1,6} )/g, '$1\n\n$2');
+
+    // 3. Split heading lines that accidentally include paragraph content.
+    //    No length guard — let the strategies decide via their own minimums.
+    //
+    //    Strategy A: split at natural punctuation mark [.)!?:] with 5+ chars of body after it.
+    //    Strategy B: split at direct lowercase→UPPERCASE merge (no space/newline between words).
+    //                e.g. "xuất khẩuNgoài" or "bắt buộcTheo" — LLM forgot the line break.
+    //                Uses Unicode \p{Ll}/\p{Lu} to cover all Vietnamese diacritic chars.
+    text = text
+        .split('\n')
+        .flatMap((line) => {
+            if (!/^#{1,6} /.test(line)) return [line];
+            const pfx = (line.match(/^#{1,6} /) ?? [''])[0];
+            const body = line.slice(pfx.length);
+            // A: punctuation-based split
+            const mA = body.match(/^(.{4,79}?[.)!?:])\s*(\S.{5,})$/);
+            if (mA) return [`${pfx}${mA[1]}`, '', mA[2]];
+            // B: Unicode lowercase immediately before uppercase — merged words
+            const mB = body.match(/^(.{10,}?\p{Ll})(\p{Lu}.{15,})$/u);
+            if (mB) return [`${pfx}${mB[1]}`, '', mB[2]];
+            return [line];
+        })
+        .join('\n');
+
+    // 4. Convert inline bullet patterns (sentence-ending + bullet with no newline)
+    text = text.replace(/([.:!?])\s*-\s+(?=[^\d\s])/g, '$1\n\n- ');  // "text:- Item"
+    text = text.replace(/([.:!?])\s*\*\s+/g, '$1\n\n- ');             // "text:* Item" → "-"
+
+    // 5. Normalize --- thematic break to prevent setext-h2 trap.
+    //    Risk: "**Kết luận:**\n---" → markdown parser reads --- as setext h2 marker!
+    //    Fix: ensure --- ALWAYS has \n\n before it AND \n\n after it.
+    text = text.replace(/([^\n])-{3,}/g, '$1\n\n---');       // "text---"   → blank line before
+    text = text.replace(/([^\n])\n-{3,}/g, '$1\n\n---');     // "text\n---" → blank line before (setext trap)
+    text = text.replace(/-{3,}([^\n])/g, '---\n\n$1');       // "---text"   → blank line after
+    text = text.replace(/-{3,}\n(?!\n)/g, '---\n\n');        // "---\n"     → double newline after
+
+    // 6. Ensure each list item starts on its own line
+    text = text.replace(/([^\n])\n(- )/g, '$1\n\n$2');
+
+    // 7. Collapse 3+ consecutive blank lines → 2
+    text = text.replace(/\n{3,}/g, '\n\n');
+
+    return text.trim();
+}
+
+/* ─── ReactMarkdown component map ───
+ * Defined outside ChatMessage to avoid recreation on every render.
+ * Uses inline styles (not Tailwind classes) to bypass any CSS specificity
+ * conflicts from external stylesheets.
+ */
+const MD_COMPONENTS = {
+    h1: ({ children }) => (
+        <h1 style={{ fontSize: '17px', fontWeight: 700, color: 'var(--ds-on-surface)', margin: '16px 0 8px', paddingBottom: '6px', borderBottom: '1px solid var(--ds-border)' }}>
+            {children}
+        </h1>
+    ),
+    h2: ({ children }) => (
+        <h2 style={{
+            fontSize: '15px',
+            fontWeight: 700,
+            color: 'var(--ds-on-surface)',
+            margin: '14px 0 6px',
+            borderLeft: '3px solid var(--ds-secondary)',
+            paddingLeft: '8px',
+        }}>
+            {children}
+        </h2>
+    ),
+    h3: ({ children }) => (
+        <h3 style={{
+            fontSize: '14px',
+            fontWeight: 600,
+            color: 'var(--ds-on-surface)',
+            margin: '10px 0 4px',
+        }}>
+            {children}
+        </h3>
+    ),
+    h4: ({ children }) => (
+        <h4 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--ds-on-surface)', margin: '10px 0 4px' }}>
+            {children}
+        </h4>
+    ),
+    p: ({ children }) => (
+        <p style={{ fontSize: '15px', lineHeight: 1.7, color: 'var(--ds-on-surface)', margin: '0 0 10px' }}>
+            {children}
+        </p>
+    ),
+    strong: ({ children }) => (
+        <strong style={{ fontWeight: 600, color: 'var(--ds-on-surface)' }}>{children}</strong>
+    ),
+    em: ({ children }) => (
+        <em style={{ fontStyle: 'italic', color: 'var(--ds-on-surface-muted)' }}>{children}</em>
+    ),
+    ul: ({ children }) => (
+        <ul style={{ fontSize: '15px', lineHeight: 1.65, color: 'var(--ds-on-surface)', paddingLeft: '20px', margin: '6px 0 10px', listStyleType: 'disc', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            {children}
+        </ul>
+    ),
+    ol: ({ children }) => (
+        <ol style={{ fontSize: '15px', lineHeight: 1.65, color: 'var(--ds-on-surface)', paddingLeft: '22px', margin: '6px 0 10px', listStyleType: 'decimal', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            {children}
+        </ol>
+    ),
+    li: ({ children }) => (
+        <li style={{ fontSize: '15px', lineHeight: 1.65, color: 'var(--ds-on-surface)' }}>{children}</li>
+    ),
+    blockquote: ({ children }) => (
+        <blockquote style={{ borderLeft: '2px solid var(--ds-secondary)', paddingLeft: '12px', margin: '8px 0', fontStyle: 'italic', color: 'var(--ds-on-surface-muted)' }}>
+            {children}
+        </blockquote>
+    ),
+    hr: () => (
+        <hr style={{ border: 'none', borderTop: '1px solid var(--ds-border)', margin: '12px 0' }} />
+    ),
+    /* pre wraps block code; code inside pre = block, code alone = inline */
+    pre: ({ children }) => (
+        <pre style={{ backgroundColor: 'var(--ds-surface-variant)', borderRadius: '4px', padding: '10px 14px', overflowX: 'auto', margin: '8px 0' }}>
+            {children}
+        </pre>
+    ),
+    code: ({ className, children }) =>
+        className ? (
+            /* block code — already inside <pre> */
+            <code style={{ fontSize: '13px', fontFamily: 'monospace', color: 'var(--ds-on-surface)' }} className={className}>
+                {children}
+            </code>
+        ) : (
+            /* inline code */
+            <code style={{ fontSize: '13px', fontFamily: 'monospace', backgroundColor: 'var(--ds-surface-variant)', borderRadius: '3px', padding: '1px 5px', color: 'var(--ds-on-surface)' }}>
+                {children}
+            </code>
+        ),
+    a: ({ href, children }) => (
+        <a href={href} style={{ color: 'var(--ds-info)', textDecoration: 'underline' }} target="_blank" rel="noopener noreferrer">
+            {children}
+        </a>
+    ),
+};
+
 /* ─── Chat message ─── */
 
 function ChatMessage({ message, isStreaming }) {
@@ -476,6 +742,30 @@ function ChatMessage({ message, isStreaming }) {
         return <TypingIndicator />;
     }
 
+    if (isStreaming) {
+        return (
+            <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.16 }}
+                className="flex gap-2.5"
+            >
+                <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-on-primary">
+                    AI
+                </div>
+
+                <div className="min-w-0 flex-1">
+                    <div style={{ fontSize: '15px', lineHeight: 1.7 }}>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
+                            {normalizeMarkdown(message.content)}
+                        </ReactMarkdown>
+                        <span className="stream-cursor" aria-hidden="true" />
+                    </div>
+                </div>
+            </motion.div>
+        );
+    }
+
     return (
         <motion.div
             initial={{ opacity: 0, y: 8 }}
@@ -491,27 +781,20 @@ function ChatMessage({ message, isStreaming }) {
                 {/* Error state */}
                 {message.error ? (
                     <div className="rounded-[4px] border border-[rgba(179,38,30,0.3)] bg-error-soft px-3 py-2.5">
-                        <p className="text-[13px] text-error leading-relaxed">{message.content}</p>
+                        <p className="text-[13px] text-error leading-relaxed">
+                            {message.errorMessage || message.content}
+                        </p>
+                        {message.content && message.errorMessage && (
+                            <p className="mt-1 whitespace-pre-wrap text-[14px] leading-relaxed text-on-surface">
+                                {message.content}
+                            </p>
+                        )}
                     </div>
                 ) : (
-                    <div className={`chat-prose${isStreaming ? ' stream-active' : ''}`}>
-                        <ReactMarkdown
-                            remarkPlugins={[remarkGfm]}
-                            components={{
-                                p: ({ children }) => <p>{children}</p>,
-                                strong: ({ children }) => <strong>{children}</strong>,
-                                ul: ({ children }) => <ul>{children}</ul>,
-                                ol: ({ children }) => <ol className="list-decimal pl-5 my-2 space-y-1">{children}</ol>,
-                                li: ({ children }) => <li>{children}</li>,
-                                code: ({ children }) => <code>{children}</code>,
-                                h3: ({ children }) => <h3 className="text-[14px] font-bold text-on-surface mt-3 mb-1">{children}</h3>,
-                            }}
-                        >
-                            {message.content}
+                    <div style={{ fontSize: '15px', lineHeight: 1.7 }}>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
+                            {normalizeMarkdown(message.content)}
                         </ReactMarkdown>
-                        {isStreaming && (
-                            <span className="stream-cursor" aria-hidden="true" />
-                        )}
                     </div>
                 )}
             </div>

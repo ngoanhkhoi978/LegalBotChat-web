@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from openai import OpenAI
 from qdrant_client import QdrantClient, models
@@ -20,24 +21,25 @@ load_dotenv()
 # ==========================================
 # CẤU HÌNH LOCAL LLM (QWEN qua LM STUDIO)
 # ==========================================
-LM_MODEL = "qwen/qwen3-8b"
+LM_MODEL = os.getenv("LM_MODEL", "qwen/qwen3-8b")
 
-lm_clients = [
-    OpenAI(base_url="https://zus-lucas-ready-powder.trycloudflare.com/v1", api_key="lm-studio-gpu1"),
-]
+_lm_base_url = os.getenv("LM_STUDIO_BASE_URL", "http://localhost:1234/v1")
+_lm_api_key  = os.getenv("LM_STUDIO_API_KEY",  "lm-studio")
+
+lm_clients = [OpenAI(base_url=_lm_base_url, api_key=_lm_api_key)]
 client_iterator = itertools.cycle(lm_clients)
 
 # ==========================================
-# CẤU HÌNH DB VÀ EMBEDDING (ĐỒNG BỘ CHUẨN)
+# CẤU HÌNH DB VÀ EMBEDDING
 # ==========================================
-EMBEDDING_MODEL_NAME = "./nrk-legal-large-traffic-ft-merged-v2"
-RERANKER_MODEL_NAME = "AITeamVN/Vietnamese_Reranker"
+EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_PATH", "./nrk-legal-large-traffic-ft-merged-v2")
+RERANKER_MODEL_NAME  = os.getenv("RERANKER_MODEL_NAME",  "AITeamVN/Vietnamese_Reranker")
 
-QDRANT_URL = "http://localhost:6333"
-COLLECTION_NAME = "luat_giao_thong_new_finetune_model"
+QDRANT_URL      = os.getenv("QDRANT_URL",        "http://localhost:6333")
+COLLECTION_NAME = os.getenv("QDRANT_COLLECTION", "luat_giao_thong_new_finetune_model")
 
-NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
-NEO4J_USER = os.getenv("NEO4J_USERNAME", "neo4j")
+NEO4J_URI      = os.getenv("NEO4J_URI",      "bolt://localhost:7687")
+NEO4J_USER     = os.getenv("NEO4J_USERNAME", "neo4j")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
 
 
@@ -112,7 +114,7 @@ class LegalRAGPipeline:
         return ""
 
     def expand_query_with_llm(self, original_query: str) -> list[str]:
-        prompt = f"""Bạn là một chuyên gia phân tích từ khóa pháp lý. 
+        prompt = f"""Bạn là một chuyên gia phân tích từ khóa pháp lý.
 Nhiệm vụ của bạn là trích xuất và tạo ra 2 biến thể tìm kiếm khác nhau dựa trên câu hỏi gốc để quét cơ sở dữ liệu luật.
 
 QUY TẮC NGHIÊM NGẶT:
@@ -269,19 +271,45 @@ Biến thể tìm kiếm (Mỗi câu một dòng):"""
         client = self.get_llm_client()
         context_text = "\n\n".join(final_contexts)
 
+        # =========================================================
+        # SYSTEM PROMPT — đồng bộ với convention Markdown frontend
+        # Convention: - (hyphen) cho bullet, ## / ### cho heading,
+        # **bold** cho terms pháp lý, --- + **Kết luận:** kết thúc.
+        # =========================================================
         system_prompt = (
-            "Bạn là một trợ lý ảo chuyên gia am hiểu sâu sắc về Luật giao thông đường bộ Việt Nam.\n"
-            "Nhiệm vụ của bạn là trả lời các câu hỏi của người dùng một cách chính xác, minh bạch dựa trên ngữ cảnh pháp lý được cung cấp.\n"
-            "Hãy trích dẫn rõ ràng tên Điều, Khoản (nếu có dữ liệu trong ngữ cảnh) và suy luận logic từng bước trước khi đưa ra kết luận.\n"
-            "Tuyệt đối tuân thủ tài liệu, không tự ý bịa đặt thông tin."
+            "Bạn là trợ lý ảo chuyên về Luật giao thông đường bộ Việt Nam. "
+            "Trả lời chính xác dựa trên ngữ cảnh pháp lý được cung cấp, trích dẫn Điều/Khoản cụ thể. "
+            "Tuyệt đối không bịa đặt thông tin ngoài tài liệu.\n\n"
+            "ĐỊNH DẠNG ĐẦU RA (BẮT BUỘC TUÂN THỦ CHÍNH XÁC):\n"
+            "1. Mở đầu: 1–2 câu tổng quan ngắn, KHÔNG có tiêu đề.\n"
+            "2. Tiêu đề mục: dùng ## cho mục chính, ### cho mục phụ.\n"
+            "   - LUÔN có một DÒNG TRỐNG trước ## và sau ##.\n"
+            "   - KHÔNG viết nội dung tiếp theo ngay sau ## trên cùng một dòng.\n"
+            "3. Danh sách: dùng '- ' (gạch ngang + dấu cách), KHÔNG dùng '*' hay '•'.\n"
+            "   - Mỗi mục trên một dòng riêng biệt.\n"
+            "   - Có một DÒNG TRỐNG trước mục đầu tiên của danh sách.\n"
+            "4. In đậm: dùng **văn bản** cho tên luật, số điều khoản, mức phạt.\n"
+            "5. Kết thúc: viết dòng '---' rồi xuống dòng '**Kết luận:** [tóm tắt 1–2 câu]'.\n\n"
+            "VÍ DỤ CẤU TRÚC ĐÚNG (làm theo mẫu này):\n"
+            "```\n"
+            "Theo quy định hiện hành, xe máy vượt đèn đỏ bị xử phạt hành chính.\n\n"
+            "## 1. Căn cứ pháp lý\n\n"
+            "Theo **Điều 7, Khoản 4** Nghị định 123/2025/NĐ-CP, mức phạt áp dụng:\n\n"
+            "- Phạt tiền từ **800.000đ đến 1.200.000đ**\n"
+            "- Tước quyền sử dụng GPLX từ 1 đến 3 tháng (nếu tái phạm)\n\n"
+            "## 2. Lưu ý bổ sung\n\n"
+            "Mức phạt có thể tăng nếu có tình tiết tăng nặng theo **Điều 10**.\n\n"
+            "---\n\n"
+            "**Kết luận:** Vượt đèn đỏ bị phạt từ 800.000đ đến 1.200.000đ và có thể bị tước GPLX.\n"
+            "```\n"
         )
 
-        user_prompt = f"""Dưới đây là ngữ cảnh pháp lý và cấu trúc phân cấp đồ thị đã được tối ưu liên quan đến câu hỏi:
+        user_prompt = f"""Dưới đây là ngữ cảnh pháp lý liên quan đến câu hỏi:
 {context_text}
 
-Câu hỏi người dùng: {query}
+Câu hỏi: {query}
 
-Hãy phân tích kỹ lưuỡng dữ liệu trên và trả lời chi tiết:"""
+Trả lời theo đúng định dạng đã quy định:"""
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -301,18 +329,15 @@ Hãy phân tích kỹ lưuỡng dữ liệu trên và trả lời chi tiết:"""
 # CẤU HÌNH FASTAPI DỊCH VỤ DỰA TRÊN LIFESPAN
 # ==========================================
 
-# Đối tượng chứa pipeline dùng chung toàn app
 pipeline_holder = {}
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Khởi tạo pipeline khi chạy server (Chỉ chạy duy nhất 1 lần)
     print("[🚀 SYSTEM] Đang khởi tạo hệ thống GraphRAG Pipeline...")
     pipeline_holder["pipeline"] = LegalRAGPipeline()
     print("[🚀 SYSTEM] Hệ thống đã sẵn sàng xử lý API request!")
     yield
-    # Giải phóng tài nguyên khi tắt server
     print("[🚀 SYSTEM] Đang giải phóng kết nối cơ sở dữ liệu...")
     if "pipeline" in pipeline_holder:
         pipeline_holder["pipeline"].neo4j_driver.close()
@@ -325,8 +350,16 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# CORS — cho phép frontend truy cập
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["POST", "GET", "OPTIONS"],
+    allow_headers=["*"],
+)
 
-# Định nghĩa cấu trúc dữ liệu đầu vào JSON
+
 class QueryRequest(BaseModel):
     query: str
 
@@ -334,19 +367,16 @@ class QueryRequest(BaseModel):
 @app.post("/api/chat/stream")
 async def chat_stream_endpoint(request: QueryRequest):
     """
-    Endpoint xử lý tìm kiếm và sinh câu trả lời dưới dạng STREAMING (SSE).
-    Dữ liệu sẽ được đẩy liên tục về giao diện Client theo thời gian thực.
+    Endpoint xử lý tìm kiếm và sinh câu trả lời dưới dạng STREAMING (plain text).
     """
     pipeline: LegalRAGPipeline = pipeline_holder.get("pipeline")
     if not pipeline:
         raise HTTPException(status_code=503, detail="Hệ thống chưa khởi tạo xong.")
 
-    # Generator function để xử lý toàn bộ logic RAG và stream chữ
     def stream_generator():
         query_text = request.query
-        print(f"\n[API API] Nhận yêu cầu: '{query_text}'")
+        print(f"\n[API] Nhận yêu cầu: '{query_text}'")
 
-        # 1. Thực hiện quy trình RAG như bình thường
         expanded_queries = pipeline.expand_query_with_llm(query_text)
         dense_results = pipeline.search_qdrant_dense(expanded_queries, top_k=8)
         sparse_results = pipeline.search_bm25_sparse(query_text, top_k=12)
@@ -382,10 +412,8 @@ async def chat_stream_endpoint(request: QueryRequest):
                     ctx_str += f"Nội dung bổ trợ liền sau: {graph_ext['next_chunk_content']}\n"
                 final_contexts.append(ctx_str)
 
-        # 2. Gọi OpenAI stream từ LLM
         response_stream = pipeline.generate_final_answer_stream(query_text, final_contexts)
 
-        # 3. Đọc dữ liệu stream, xử lý lọc bỏ tag <think> và yield chữ ra endpoint
         inside_think_tag = False
         for chunk in response_stream:
             if hasattr(chunk.choices[0], 'delta') and chunk.choices[0].delta.content:
@@ -399,13 +427,11 @@ async def chat_stream_endpoint(request: QueryRequest):
                     continue
 
                 if not inside_think_tag:
-                    # Trả chuỗi text thuần về client ngay lập tức
                     yield content
 
-    return StreamingResponse(stream_generator(), media_type="text/event-stream")
+    return StreamingResponse(stream_generator(), media_type="text/plain; charset=utf-8")
 
 
 if __name__ == "__main__":
     import uvicorn
-    # Chạy ứng dụng FastAPI trên cổng 8000
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=False)

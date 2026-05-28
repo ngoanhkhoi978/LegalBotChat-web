@@ -17,10 +17,12 @@
       "Bash(node screenshot.cjs)",
       "Bash(rm \"/d/workspace/project/VKU/CD2/legalchatbot/screenshot.cjs\" && echo \"cleaned\")",
       "Bash(npm uninstall *)",
-      "Bash(node ss.cjs)"
+      "Bash(node ss.cjs)",
+      "Bash(mkdir -p \"/d/workspace/project/VKU/CD2/legalchatbot/src/api\" && echo \"dir ok\")"
     ],
     "additionalDirectories": [
-      "D:\\workspace\\project\\VKU\\CD2\\legalchatbot"
+      "D:\\workspace\\project\\VKU\\CD2\\legalchatbot",
+      "D:\\workspace\\project\\VKU\\CD2\\legalchatbot\\src\\api"
     ]
   }
 }

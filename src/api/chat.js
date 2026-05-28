@@ -1,4 +1,6 @@
-const API_BASE = 'https://legal.hungreo.dpdns.org';
+const API_BASE =
+    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) ||
+    'https://legal.hungreo.dpdns.org';
 
 /**
  * Stream a chat response from the legal RAG API.
@@ -24,7 +26,10 @@ export async function* streamChat(query, signal) {
     } catch (err) {
         if (err.name === 'AbortError') throw err;
         // Network error, DNS failure, CORS, etc.
-        throw new Error('Không thể kết nối đến máy chủ API. Kiểm tra kết nối mạng hoặc thử lại sau.');
+        throw new Error(
+            'Không thể kết nối đến máy chủ API. Kiểm tra kết nối mạng hoặc thử lại sau.',
+            { cause: err }
+        );
     }
 
     if (!response.ok) {
@@ -42,13 +47,69 @@ export async function* streamChat(query, signal) {
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder('utf-8');
+    const contentType = response.headers.get('content-type') || '';
+    let buffer = '';
+    let isEventStream = contentType.includes('text/event-stream');
+
+    const flushSseBuffer = function* () {
+        while (true) {
+            const separatorIndex = buffer.indexOf('\n\n');
+            if (separatorIndex === -1) break;
+
+            const eventBlock = buffer.slice(0, separatorIndex).replace(/\r/g, '');
+            buffer = buffer.slice(separatorIndex + 2);
+
+            const dataLines = eventBlock
+                .split('\n')
+                .map((line) => line.trimStart())
+                .filter((line) => line.startsWith('data:'))
+                .map((line) => line.slice(5).replace(/^\s?/, ''));
+
+            if (dataLines.length > 0) {
+                const payload = dataLines.join('\n');
+                if (payload && payload !== '[DONE]') {
+                    yield payload;
+                }
+            }
+        }
+    };
 
     try {
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
+
             const text = decoder.decode(value, { stream: true });
-            if (text) yield text;
+            if (!text) continue;
+
+            if (isEventStream) {
+                buffer += text;
+                yield* flushSseBuffer();
+            } else {
+                buffer += text;
+                if (/^\s*data:\s?/m.test(buffer) || buffer.includes('\n\n')) {
+                    isEventStream = true;
+                    yield* flushSseBuffer();
+                } else {
+                    yield text;
+                    buffer = '';
+                }
+            }
+        }
+
+        if (isEventStream && buffer.trim()) {
+            buffer = buffer.replace(/\r/g, '');
+            const dataLines = buffer
+                .split('\n')
+                .map((line) => line.trimStart())
+                .filter((line) => line.startsWith('data:'))
+                .map((line) => line.slice(5).replace(/^\s?/, ''));
+            if (dataLines.length > 0) {
+                const payload = dataLines.join('\n');
+                if (payload && payload !== '[DONE]') {
+                    yield payload;
+                }
+            }
         }
     } finally {
         reader.releaseLock();
